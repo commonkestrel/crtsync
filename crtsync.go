@@ -31,7 +31,7 @@ func main() {
     cli.RegisterCommand("list", list)
     cli.RegisterCommand("add", add)
     cli.RegisterCommand("remove", remove)
-    cli.RegisterCommand("init", cominit)
+    cli.RegisterCommand("init", storeinit)
 
     if cli.Bool("help", false) {
         help()
@@ -58,8 +58,48 @@ func help() {
     }
 }
 
-func cominit(args, flags []string) {
-    
+func storeinit(args, flags []string) {
+    if len(args) == 0 {
+        fmt.Println("must provide path to key file")
+        os.Exit(1)
+    }
+
+    keypath := args[0]
+    _, err := os.Stat(keypath)
+    if os.IsNotExist(err) {
+        fmt.Println("key file does not exist")
+    }
+
+    err = os.Mkdir(path.Join(dir, "store"), os.ModeDir)
+    if err != nil && !os.IsExist(err) {
+        panic(err)
+    }
+
+    file, err := os.Create(path.Join(dir, "store", "index.json"))
+    if err != nil && !os.IsExist(err) {
+        panic(err)
+    }
+    defer file.Close()
+
+    _, err = file.WriteString("[]")
+    if err != nil {
+        panic(err)
+    }
+
+    keyfile, err := os.Create(path.Join(dir, "store", "key.ppk"))
+    if err != nil {
+        panic(err)
+    }
+    defer keyfile.Close()
+
+    key, err := os.ReadFile(keypath)
+    if err != nil {
+        panic(err)
+    }
+    _, err = keyfile.Write(key)
+    if err != nil {
+        panic(err)
+    }
 }
 
 func list(args, flags []string) {
