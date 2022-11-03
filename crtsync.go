@@ -1,16 +1,19 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path"
-	"runtime"
+    "encoding/json"
+    "fmt"
+    "os"
+    "path"
+    "runtime"
+    "context"
 
-	"github.com/jibble330/cli"
-	/*"golang.org/x/crypto/ssh"
-	  "github.com/bramvdbogaerde/go-scp/auth"
-	  scp "github.com/bramvdbogaerde/go-scp"*/)
+    "github.com/jibble330/cli"
+    "example/crtsync/padding"
+    "golang.org/x/crypto/ssh"
+    scp "github.com/bramvdbogaerde/go-scp"
+	"github.com/bramvdbogaerde/go-scp/auth"
+)
 
 type command struct {
     Name string
@@ -86,7 +89,7 @@ func storeinit(args, flags []string) {
         panic(err)
     }
 
-    keyfile, err := os.Create(path.Join(dir, "store", "key.ppk"))
+    keyfile, err := os.Create(path.Join(dir, "store", "id_rsa"))
     if err != nil {
         panic(err)
     }
@@ -103,10 +106,10 @@ func storeinit(args, flags []string) {
 }
 
 func list(args, flags []string) {
-    filestr, err := os.ReadFile(path.Join(dir, "lock/lock.json"))
+    filestr, err := os.ReadFile(path.Join(dir, "store/index.json"))
     if err != nil {
         if os.IsNotExist(err) {
-            fmt.Println("lock file does not exist. please run the init command to initialize the directory.")
+            fmt.Println("index file does not exist. please run the init command to initialize the directory.")
             os.Exit(1)
         }
         panic(err)
@@ -136,9 +139,10 @@ func list(args, flags []string) {
         }
     }
 
-    fmt.Printf("%*s | %*s | %*s | %*s\n\n", maxlen[0]-len("Name"), "Name", maxlen[1]-len("Path"), "Path", maxlen[2]-len("Key"), "Key", maxlen[3]-len("Loop"), "Loop")
+    fmt.Printf(" %v | %v | %v | %v \n", padding.Pad("Name", maxlen[0], padding.EDGES), padding.Pad("Path", maxlen[1], padding.EDGES), padding.Pad("Key", maxlen[2], padding.EDGES), padding.Pad("Loop", maxlen[3], padding.EDGES))
+    fmt.Printf("-%v-|-%v-|-%v-|-%v-\n", padding.Fill("", maxlen[0], '-', padding.RIGHT), padding.Fill("", maxlen[1], '-', padding.RIGHT), padding.Fill("", maxlen[2], '-', padding.RIGHT), padding.Fill("", maxlen[3], '-', padding.RIGHT))
     for _, c := range commands {
-        fmt.Printf("%*s | %*s | %*s | %*s\n", maxlen[0]-len(c.Name), c.Name, maxlen[1]-len(c.Path), c.Path, maxlen[2]-len(c.Key), c.Key, maxlen[3]-len(fmt.Sprint(c.Loop)), fmt.Sprint(c.Loop))
+        fmt.Printf(" %v | %v | %v | %v \n", padding.Pad(c.Name, maxlen[0], padding.RIGHT), padding.Pad(c.Path, maxlen[1], padding.RIGHT), padding.Pad(c.Key, maxlen[2], padding.RIGHT), padding.Pad(c.Loop, maxlen[3], padding.RIGHT))
     }
 }
 
@@ -153,10 +157,10 @@ func add(args, flags []string) {
 
     cmd := command{name, animpath, key, loop, loopdelay}
 
-    filestr, err := os.ReadFile(path.Join(dir, "lock/lock.json"))
+    filestr, err := os.ReadFile(path.Join(dir, "store/index.json"))
     if err != nil {
         if os.IsNotExist(err) {
-            fmt.Println("lock file does not exist. please run the init command to initialize the directory.")
+            fmt.Println("index file does not exist. please run the init command to initialize the directory.")
             os.Exit(1)
         }
         panic(err)
@@ -187,10 +191,10 @@ func add(args, flags []string) {
         panic(err)
     }
     
-    err = os.WriteFile(path.Join(dir, "lock/lock.json"), marshaled, 0644)
+    err = os.WriteFile(path.Join(dir, "store/index.json"), marshaled, 0644)
     if err != nil {
         if os.IsNotExist(err) {
-            fmt.Println("lock file does not exist. please run the init command to initialize the directory.")
+            fmt.Println("index file does not exist. please run the init command to initialize the directory.")
             os.Exit(1)
         }
         panic(err)
@@ -202,5 +206,21 @@ func remove(args, flags []string) {
 }
 
 func sync(args, flags []string) {
-	//client := scp.NewClient("example.com:22", &clientConfig)
+    clientConfig, _ := auth.PrivateKey("pi", path.Join(dir, "store", "id_rsa"), ssh.InsecureIgnoreHostKey())
+
+    client := scp.NewClient("raspberrypi:22", &clientConfig)
+
+    err := client.Connect()
+    if err != nil {
+		fmt.Println("Couldn't establish a connection to the remote server ", err)
+		os.Exit(1)
+	}
+    defer client.Close()
+    
+    f, _ := os.Open(path.Join(dir, "store", "index.json"))
+    defer f.Close()
+    err = client.CopyFromFile(context.Background(), *f, "/home/pi/Documents/Scripts/CRT/CRT/store/index.json", "0655")
+    if err != nil {
+        panic(err)
+    }
 }
