@@ -6,13 +6,12 @@ import (
     "os"
     "path"
     "runtime"
-    "context"
+    "net"
 
     "github.com/jibble330/cli"
     "example/crtsync/padding"
     "golang.org/x/crypto/ssh"
-    scp "github.com/bramvdbogaerde/go-scp"
-	"github.com/bramvdbogaerde/go-scp/auth"
+    "github.com/tmc/scp"
 )
 
 type command struct {
@@ -231,38 +230,73 @@ func exists(path string) bool {
     return !os.IsNotExist(err)
 }
 
+func getKey() (key ssh.Signer, err error) {
+    //usr, _ := user.Current()
+    file := path.Join(store, "id_rsa")
+    buf, err := os.ReadFile(file)
+    if err != nil {
+        return
+    }
+    key, err = ssh.ParsePrivateKey(buf)
+    if err != nil {
+        return
+    }
+    return
+}
+
 func sync(args, flags []string) {
     for _, c := range index {
         if !exists(path.Join(store, c.Filename)) {
             fmt.Printf("missing file %v for %v.\n", c.Filename, c.Name)
+            os.Exit(1)
         }
-        os.Exit(1)
     }
-    
-    clientConfig, _ := auth.PrivateKey("pi", path.Join(store, "id_rsa"), ssh.InsecureIgnoreHostKey())
 
-    client := scp.NewClient("raspberrypi:22", &clientConfig)
-
-    err := client.Connect()
-    if err != nil {
-		fmt.Println("Couldn't establish a connection to the remote server ", err)
-		os.Exit(1)
-	}
-    defer client.Close()
-    
-    f, _ := os.Open(path.Join(store, "index.json"))
-    defer f.Close()
-    err = client.CopyFromFile(context.Background(), *f, "/home/pi/Documents/Scripts/CRT/CRT/store/index.json", "0655")
+    err := copy(path.Join(store, "index.json"), "/home/pi/Documents/Scripts/CRT/store/index.json")
     if err != nil {
         panic(err)
     }
-
+    
     for _, c := range index {
-        f, _ = os.Open(path.Join(store, c.Filename))
-        defer f.Close()
-        err = client.CopyFromFile(context.Background(), *f, "/home/pi/Documents/Scripts/CRT/CRT/store/" + c.Filename, "0655")
+        err := copy(path.Join(store, c.Filename), "/home/pi/Documents/Scripts/CRT/store/"+c.Filename)
         if err != nil {
             panic(err)
         }
     }
+}
+
+func copy(source, destination string) error {
+    key, err := getKey()
+    if err != nil {
+        return err
+    }
+
+    config := &ssh.ClientConfig{
+        User: "pi",
+        Auth: []ssh.AuthMethod{
+            ssh.PublicKeys(key),
+        },
+        HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+            return nil
+        },
+    }
+
+    client, err := ssh.Dial("tcp", "raspberrypi:22", config)
+    if err != nil {
+        fmt.Println("Failed to dial pi@raspberrypi:22: ", err.Error())
+        os.Exit(1)
+    }
+
+    session, err := client.NewSession()
+    if err != nil {
+        fmt.Println("Failed to create session: ", err.Error())
+        os.Exit(1)
+    }
+    defer session.Close()
+
+    err = scp.CopyPath(source, destination, session)
+    if err != nil {
+        fmt.Printf("Failed to copy %v: %v\n", path.Base(source), err.Error())
+    }
+    return nil
 }
