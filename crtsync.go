@@ -1,17 +1,19 @@
 package main
 
 import (
-    "encoding/json"
-    "fmt"
-    "os"
-    "path"
-    "runtime"
-    "net"
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"path"
+	"runtime"
+	"strings"
 
-    "github.com/jibble330/cli"
-    "example/crtsync/padding"
-    "golang.org/x/crypto/ssh"
-    "github.com/tmc/scp"
+	"example/crtsync/padding"
+
+	"github.com/jibble330/cli"
+	"github.com/tmc/scp"
+	"golang.org/x/crypto/ssh"
 )
 
 type command struct {
@@ -22,16 +24,12 @@ type command struct {
     LoopDelay int //In milliseconds
 }
 
-type helpcommand struct {
-    Name, Help string
-}
-
 var (
     dir string
     store string
     index []command
 
-    keys = []string{"power", "volumeup", "stop", "previous", "playpause", "next", "down", "volumedown", "up", "equal", "start", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}
+    keys = []string{"poweron", "poweroff", "volumeup", "stop", "previous", "playpause", "next", "down", "volumedown", "up", "equal", "start", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0"}
 )
 
 func init() {
@@ -58,27 +56,41 @@ func main() {
     cli.RegisterCommand("list", list)
     cli.RegisterCommand("add", add)
     cli.RegisterCommand("remove", remove)
+    cli.RegisterCommand("rm", remove)
     cli.RegisterCommand("init", storeinit)
+    cli.Default(help)
 
     if cli.Bool("help", false) {
-        help()
+        help(nil, nil)
+        return
     }
 
     cli.Exec()
+    if len(cli.ARGS) > 0 {
+        command := cli.ARGS[0]
+        if command != "sync" && command != "list" && command != "add" && command != "remove" && command != "rm" && command != "init" {
+            fmt.Print("command not recognized. use \"crtsync --help\" to see available commands")
+        }
+    }
 }
 
-func help() {
-    index := []helpcommand{}
-    if len(cli.ARGS) > 0 {
-        com := cli.ARGS[0]
-        for _, c := range index {
-            if c.Name == com {
-                fmt.Println(c.Help)
-                return
-            }
-        }
-        fmt.Println("Please ")
-    }
+func help(args, flags []string) {
+    fmt.Println(`
+crtsync - tool used for syncing and rendering animations and pictures to a raspberry pi matrix
+
+usage: crtsync <command> [<args>]
+
+commands:
+    init - Initializes the store folder with a given ssh key
+        usage: crtsync init <path to ssh key>
+    add - Adds a command to the index
+        usage: crtsync add <name> <filename> <button> [--loop] [--delay=<delay in ms>]
+    remove[rm] - Remove a command from the index
+        usage: crtsync remove <name>
+    list - List all registered commands
+        usage: crtsync list
+    sync - Sync store repository to the raspberry pi
+        usage: crtsync sync`)
 }
 
 func writeindex() {
@@ -142,7 +154,7 @@ func storeinit(args, flags []string) {
 }
 
 func list(args, flags []string) {
-    maxlen := [4]int{len("Name"), len("File"), len("Key"), len("Loop")}
+    maxlen := [5]int{len("Name"), len("File"), len("Key"), len("Loop"), len("Delay")}
     for _, c := range index {
         if len(c.Name) > maxlen[0] {
             maxlen[0] = len(c.Name)
@@ -156,22 +168,27 @@ func list(args, flags []string) {
         if len(fmt.Sprint(c.Loop)) > maxlen[3] {
             maxlen[3] = len(fmt.Sprint(c.Loop))
         }
+        if len(fmt.Sprint(c.LoopDelay))+2 > maxlen[4] {
+            maxlen[4] = len(fmt.Sprint(c.LoopDelay))+2
+        }
     }
 
-    fmt.Printf(" %v | %v | %v | %v \n", padding.Pad("Name", maxlen[0], padding.EDGES), padding.Pad("File", maxlen[1], padding.EDGES), padding.Pad("Key", maxlen[2], padding.EDGES), padding.Pad("Loop", maxlen[3], padding.EDGES))
-    fmt.Printf("-%v-|-%v-|-%v-|-%v-\n", padding.Fill("", maxlen[0], '-', padding.RIGHT), padding.Fill("", maxlen[1], '-', padding.RIGHT), padding.Fill("", maxlen[2], '-', padding.RIGHT), padding.Fill("", maxlen[3], '-', padding.RIGHT))
+    fmt.Println(padding.Fill(" ", maxlen[0]+maxlen[1]+maxlen[2]+maxlen[3]+maxlen[4]+15, '_', padding.RIGHT), " ")
+    fmt.Printf("| %v | %v | %v | %v | %v |\n", padding.Pad("Name", maxlen[0], padding.EDGES), padding.Pad("File", maxlen[1], padding.EDGES), padding.Pad("Key", maxlen[2], padding.EDGES), padding.Pad("Loop", maxlen[3], padding.EDGES), padding.Pad("Delay", maxlen[4], padding.EDGES))
+    fmt.Printf("|-%v-|-%v-|-%v-|-%v-|-%v-|\n", padding.Fill("", maxlen[0], '-', padding.RIGHT), padding.Fill("", maxlen[1], '-', padding.RIGHT), padding.Fill("", maxlen[2], '-', padding.RIGHT), padding.Fill("", maxlen[3], '-', padding.RIGHT), padding.Fill("", maxlen[4], '-', padding.RIGHT))
     for _, c := range index {
-        fmt.Printf(" %v | %v | %v | %v \n", padding.Pad(c.Name, maxlen[0], padding.RIGHT), padding.Pad(c.Filename, maxlen[1], padding.RIGHT), padding.Pad(c.Key, maxlen[2], padding.RIGHT), padding.Pad(c.Loop, maxlen[3], padding.RIGHT))
+        fmt.Printf("| %v | %v | %v | %v | %v |\n", padding.Pad(c.Name, maxlen[0], padding.RIGHT), padding.Pad(c.Filename, maxlen[1], padding.RIGHT), padding.Pad(c.Key, maxlen[2], padding.RIGHT), padding.Pad(c.Loop, maxlen[3], padding.RIGHT), padding.Pad(fmt.Sprint(c.LoopDelay)+"ms", maxlen[4], padding.RIGHT))
     }
+    fmt.Print(padding.Fill(" ", maxlen[0]+maxlen[1]+maxlen[2]+maxlen[3]+maxlen[4]+15, '‾', padding.RIGHT), " ")
 }
 
 func add(args, flags []string) {
     if len(args) < 3 {
-        fmt.Println("incorrect usage. requires at least the name, key, and path of the command")
+        fmt.Println("incorrect usage. requires at least the name, file name, and key of the command")
         os.Exit(1)
     }
 
-    name, filename, key := args[0], args[1], args[2]
+    name, filename, key := args[0], args[1], strings.ToLower(args[2])
     loop := cli.Bool("loop", false)
     loopdelay := cli.Int("delay", 0)
 
@@ -198,6 +215,7 @@ func add(args, flags []string) {
     index = append(index, cmd)
 
     writeindex()
+    fmt.Printf("added \"%v\" to the index. run \"crtsync list\" to see the current index", cmd.Name)
 }
 
 func remove(args, flags []string) {
@@ -223,6 +241,7 @@ func remove(args, flags []string) {
     index = append(index[:i], index[i+1:]...)
 
     writeindex()
+    fmt.Printf("removed \"%v\" from the index. run \"crtsync list\" to see the current index", name)
 }
 
 func exists(path string) bool {
@@ -247,22 +266,25 @@ func getKey() (key ssh.Signer, err error) {
 func sync(args, flags []string) {
     for _, c := range index {
         if !exists(path.Join(store, c.Filename)) {
-            fmt.Printf("missing file %v for %v.\n", c.Filename, c.Name)
+            fmt.Printf("err: %v not found for %v\n", c.Filename, c.Name)
             os.Exit(1)
         }
     }
 
+    fmt.Println("\ncopying index.json -> /home/pi/Documents/Scripts/CRT/store/index.json")
     err := copy(path.Join(store, "index.json"), "/home/pi/Documents/Scripts/CRT/store/index.json")
     if err != nil {
         panic(err)
     }
     
     for _, c := range index {
+        fmt.Printf("copying %v -> %v\n", c.Filename, "/home/pi/Documents/Scripts/CRT/store/"+c.Filename)
         err := copy(path.Join(store, c.Filename), "/home/pi/Documents/Scripts/CRT/store/"+c.Filename)
         if err != nil {
             panic(err)
         }
     }
+    fmt.Println()
 }
 
 func copy(source, destination string) error {

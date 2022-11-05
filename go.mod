@@ -3,7 +3,7 @@ module example/crtsync
 go 1.19
 
 require (
-	github.com/jibble330/cli v0.0.0-20221102024653-cdab626c233e
+	github.com/jibble330/cli v0.0.0-20221105034620-435c75353f31
 	github.com/tmc/scp v0.0.0-20170824174625-f7b48647feef
 	golang.org/x/crypto v0.1.0
 )

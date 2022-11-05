@@ -46,7 +46,7 @@ func Pad(in any, size int, direction uint8) string {
     }
 }
 
-func Fill(in any, size int, fillchar byte, direction uint8) string {
+func Fill(in any, size int, fillchar rune, direction uint8) string {
     base := fmt.Sprint(in)
     if size < len(base) {
         return base
