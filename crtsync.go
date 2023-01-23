@@ -11,7 +11,7 @@ import (
 
 	"example/crtsync/padding"
 
-	"github.com/jibble330/cli"
+	"github.com/commonkestrel/cli"
 	"github.com/tmc/scp"
 	"golang.org/x/crypto/ssh"
 )
